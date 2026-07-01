@@ -171,6 +171,9 @@ type Hub struct {
 	// ingest is the channel for incoming telemetry payloads from Redis.
 	ingest chan models.TelemetryPayload
 
+	// OnClientCountChange is called whenever a client connects or disconnects.
+	OnClientCountChange func(count int)
+
 	cfg config.WebSocketConfig
 }
 
@@ -223,6 +226,9 @@ func (h *Hub) Run(done <-chan struct{}) {
 			h.clients[c] = struct{}{}
 			slog.Info("ws hub: client registered",
 				"client_id", c.id, "total_clients", len(h.clients))
+			if h.OnClientCountChange != nil {
+				h.OnClientCountChange(len(h.clients))
+			}
 
 		case c := <-h.unregister:
 			if _, ok := h.clients[c]; ok {
@@ -230,6 +236,9 @@ func (h *Hub) Run(done <-chan struct{}) {
 				close(c.send)
 				slog.Info("ws hub: client unregistered",
 					"client_id", c.id, "total_clients", len(h.clients))
+				if h.OnClientCountChange != nil {
+					h.OnClientCountChange(len(h.clients))
+				}
 			}
 
 		case p := <-h.ingest:
@@ -253,6 +262,9 @@ func (h *Hub) Run(done <-chan struct{}) {
 					delete(h.clients, c)
 					close(c.send)
 					slog.Warn("ws hub: stalled client evicted", "client_id", c.id)
+					if h.OnClientCountChange != nil {
+						h.OnClientCountChange(len(h.clients))
+					}
 				}
 			}
 		}

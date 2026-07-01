@@ -158,6 +158,8 @@ type Dispatcher struct {
 	prober   Prober
 	callback ResultCallback
 	wg       sync.WaitGroup
+	mu       sync.RWMutex
+	active   bool
 }
 
 // NewDispatcher creates a Dispatcher with the given Prober and callback.
@@ -165,7 +167,22 @@ func NewDispatcher(prober Prober, callback ResultCallback) *Dispatcher {
 	return &Dispatcher{
 		prober:   prober,
 		callback: callback,
+		active:   false, // Start inactive until clients connect
 	}
+}
+
+// SetActive toggles the dispatcher's polling state.
+func (d *Dispatcher) SetActive(active bool) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.active = active
+}
+
+// IsActive returns whether the dispatcher should actively poll.
+func (d *Dispatcher) IsActive() bool {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	return d.active
 }
 
 // Start launches one Goroutine per endpoint config.
@@ -197,6 +214,9 @@ func (d *Dispatcher) runProbeLoop(ctx context.Context, cfg models.EndpointConfig
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			if !d.IsActive() {
+				continue // Demand-driven: skip probe when no clients connected
+			}
 			result, err := d.prober.Probe(ctx, cfg)
 			if err != nil {
 				// Context cancelled — exit cleanly.

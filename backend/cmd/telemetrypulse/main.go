@@ -83,6 +83,15 @@ func main() {
 
 	// ── WebSocket Hub ──────────────────────────────────────────────────────
 	hub := wsserver.NewHub(cfg.WebSocket)
+	hub.OnClientCountChange = func(count int) {
+		active := count > 0
+		dispatcher.SetActive(active)
+		if active {
+			slog.Info("Probes resumed: client connected")
+		} else {
+			slog.Info("Probes paused: no clients connected")
+		}
+	}
 
 	// ── Redis Subscriber ───────────────────────────────────────────────────
 	// The subscriber feeds decoded payloads directly into the hub's ingest
