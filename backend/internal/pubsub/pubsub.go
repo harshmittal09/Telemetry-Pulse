@@ -142,7 +142,9 @@ func (s *Subscriber) Run(ctx context.Context) error {
 		return fmt.Errorf("pubsub: initial receive failed: %w", err)
 	}
 
-	msgCh := pubsub.Channel()
+	// Disable the automatic 3-second PING health checks to preserve Redis quota
+	// when no messages are flowing.
+	msgCh := pubsub.Channel(redis.WithChannelHealthCheckInterval(0))
 
 	slog.Info("Redis subscriber listening", "channel", s.channel)
 
