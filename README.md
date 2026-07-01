@@ -1,4 +1,4 @@
-# TelemetryPulse
+# Introduction
 
 ![Build Status](https://img.shields.io/badge/build-passing-brightgreen?style=flat-square)
 ![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
