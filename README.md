@@ -1,4 +1,4 @@
-# Introduction
+# TelemetryPulse
 
 ![Build Status](https://img.shields.io/badge/build-passing-brightgreen?style=flat-square)
 ![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
@@ -7,7 +7,7 @@
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.0-3178C6?style=flat-square&logo=typescript)
 ![Redis](https://img.shields.io/badge/Redis-PubSub-DC382D?style=flat-square&logo=redis)
 
-##  Elevator Pitch
+##  Introduction
 
 TelemetryPulse is an industrial-grade, real-time Synthetic Network Performance Monitoring & Observability Engine. Designed to ingest, calculate, and visualize network latencies at high velocities, it solves the problem of detecting sub-second micro-anomalies in distributed systems without overwhelming the browser DOM or backing data stores.
 
