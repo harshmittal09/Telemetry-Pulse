@@ -7,11 +7,11 @@
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.0-3178C6?style=flat-square&logo=typescript)
 ![Redis](https://img.shields.io/badge/Redis-PubSub-DC382D?style=flat-square&logo=redis)
 
-## 🚀 Elevator Pitch
+##  Elevator Pitch
 
 TelemetryPulse is an industrial-grade, real-time Synthetic Network Performance Monitoring & Observability Engine. Designed to ingest, calculate, and visualize network latencies at high velocities, it solves the problem of detecting sub-second micro-anomalies in distributed systems without overwhelming the browser DOM or backing data stores.
 
-## ✨ Key Features
+##  Key Features
 
 * **O(1) Anomaly Detection:** Implements a sliding window statistical algorithm (Z-Score analysis) that computes mean and standard deviation over an N-sized rolling window in constant time.
 * **Demand-Driven Architecture:** The backend actively monitors WebSocket connection counts, pausing all network probes and Redis `PUBLISH` events when the dashboard is idle, yielding exact zero-cost overhead when not actively observed.
@@ -19,7 +19,7 @@ TelemetryPulse is an industrial-grade, real-time Synthetic Network Performance M
 * **Canvas-Based Rendering:** Bypasses SVG overhead entirely. All telemetry is imperatively drawn to an HTML5 Canvas via Chart.js, avoiding costly DOM manipulations per data point.
 * **Minimalist UI/UX:** An unapologetic, uncompromising "all-black and chrome" industrial aesthetic built entirely with Tailwind CSS utility classes.
 
-## 🏗 System Architecture
+## System Architecture
 
 The pipeline is highly decoupled and scales horizontally across endpoints:
 
@@ -29,7 +29,7 @@ The pipeline is highly decoupled and scales horizontally across endpoints:
 4. **WebSocket Hub (Go):** Subscribes to Redis and synchronizes state into a single aggregated snapshot frame broadcasted to all connected clients.
 5. **Observability UI (React):** Connects to the WebSocket, queues incoming JSON packets, and renders the data onto a virtualized log and Canvas chart at up to 60 FPS.
 
-## 🛠 Getting Started
+## Getting Started
 
 These instructions will get you a copy of the project up and running on your local machine for development and testing purposes.
 
@@ -70,20 +70,20 @@ npm run dev
 **4. View the Dashboard:**
 Open your browser and navigate to `http://localhost:5173`. The backend will instantly detect the connection, resume network probing, and begin streaming live telemetry to the dashboard.
 
-## ⚡ Performance Metrics
+##  Performance Metrics
 
 TelemetryPulse is rigorously optimized for real-time observability:
 * **Ingestion Velocity:** Easily handles 2Hz (500ms) multi-endpoint payload broadcasts.
 * **Render Frame Rate:** Bound safely to 60 FPS through `requestAnimationFrame` debouncing, even during high-density anomaly bursts.
 * **Resource Optimization:** Redis quotas and CPU cycles are strictly preserved through the automatic demand-driven suspension architecture.
 
-## ☁️ Deployment
+## Deployment
 
 TelemetryPulse is 12-factor app compliant and fully container-ready, making it trivial to deploy on modern cloud platforms:
 * **Backend:** Deployable on Render or Railway using the `PORT` and `REDIS_URL` environment variables.
 * **Frontend:** Deployable as a static Vite site on Vercel or Netlify via `VITE_WS_URL` and `VITE_API_URL` configuration.
 * **Datastore:** Seamlessly connects to managed Redis instances like Upstash.
 
-## 📄 License
+##  License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
