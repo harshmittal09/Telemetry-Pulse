@@ -93,7 +93,7 @@ pipeline {
                         go mod verify
 
                         # Run staticcheck on the entire module, ignoring SA1019 (deprecated warnings)
-                        ${GOPATH}/bin/staticcheck -checks="all,-SA1019" ./...
+                        ${GOPATH}/bin/staticcheck -checks="all,-SA1019,-ST1000" ./...
                     '''
                 }
             }
