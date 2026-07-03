@@ -53,15 +53,22 @@ import (
 // ─────────────────────────────────────────────────────────────
 
 // WSMessage is the strictly typed JSON frame sent to browser clients.
-// It wraps a slice of TelemetryPayload (one per endpoint) so a single
-// WebSocket frame carries the full system snapshot.
+// It carries the full system snapshot in a single frame:
+//   - Network telemetry (one entry per monitored endpoint)
+//   - Go runtime / system memory metrics (latest snapshot)
+//   - AWS RDS backup and availability metrics (latest snapshot, may be nil)
 type WSMessage struct {
-	// Type identifies the frame kind. Currently always "telemetry_snapshot".
+	// Type identifies the frame kind. Always "telemetry_snapshot".
 	Type string `json:"type"`
 	// Timestamp is the server-side broadcast time (UTC ISO-8601).
 	Timestamp string `json:"timestamp"`
-	// Payloads is the current snapshot — one entry per monitored endpoint.
+	// Payloads is the network telemetry snapshot — one entry per endpoint.
 	Payloads []models.TelemetryPayload `json:"payloads"`
+	// System is the latest Go runtime memory/GC metrics. Always present.
+	System *models.SystemMetrics `json:"system,omitempty"`
+	// RDS is the latest AWS RDS cluster backup metrics. Nil if RDS probe
+	// is not configured (RDS_CLUSTER_ID env var not set).
+	RDS *models.RDSMetrics `json:"rds,omitempty"`
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -161,6 +168,11 @@ type Hub struct {
 	// Updated by Ingest(); read-snapshotted on each broadcast tick.
 	snapshot map[models.EndpointID]models.TelemetryPayload
 
+	// systemSnapshot holds the latest Go runtime metrics.
+	systemSnapshot *models.SystemMetrics
+	// rdsSnapshot holds the latest AWS RDS cluster metrics (nil if not configured).
+	rdsSnapshot *models.RDSMetrics
+
 	// clients is the live set of connected WebSocket clients.
 	clients map[*client]struct{}
 
@@ -170,6 +182,10 @@ type Hub struct {
 	unregister chan *client
 	// ingest is the channel for incoming telemetry payloads from Redis.
 	ingest chan models.TelemetryPayload
+	// ingestSystem receives Go runtime metrics from the SystemDispatcher.
+	ingestSystem chan models.SystemMetrics
+	// ingestRDS receives AWS RDS metrics from the RDSDispatcher.
+	ingestRDS chan models.RDSMetrics
 
 	// OnClientCountChange is called whenever a client connects or disconnects.
 	OnClientCountChange func(count int)
@@ -180,16 +196,18 @@ type Hub struct {
 // NewHub creates a Hub with the given WebSocket config.
 func NewHub(cfg config.WebSocketConfig) *Hub {
 	return &Hub{
-		snapshot:   make(map[models.EndpointID]models.TelemetryPayload),
-		clients:    make(map[*client]struct{}),
-		register:   make(chan *client, 32),
-		unregister: make(chan *client, 32),
-		ingest:     make(chan models.TelemetryPayload, 1024),
-		cfg:        cfg,
+		snapshot:     make(map[models.EndpointID]models.TelemetryPayload),
+		clients:      make(map[*client]struct{}),
+		register:     make(chan *client, 32),
+		unregister:   make(chan *client, 32),
+		ingest:       make(chan models.TelemetryPayload, 1024),
+		ingestSystem: make(chan models.SystemMetrics, 32),
+		ingestRDS:    make(chan models.RDSMetrics, 32),
+		cfg:          cfg,
 	}
 }
 
-// Ingest is called by the Redis subscriber to deliver a new payload.
+// Ingest is called by the Redis subscriber to deliver a new telemetry payload.
 // It is safe to call from any goroutine. Non-blocking: drops if full.
 func (h *Hub) Ingest(payload models.TelemetryPayload) {
 	select {
@@ -197,6 +215,26 @@ func (h *Hub) Ingest(payload models.TelemetryPayload) {
 	default:
 		slog.Warn("ws hub: ingest channel full — dropping payload",
 			"endpoint_id", payload.EndpointID)
+	}
+}
+
+// IngestSystem delivers a SystemMetrics snapshot to the hub.
+// Non-blocking: drops if the buffer is full (acceptable — metrics are periodic).
+func (h *Hub) IngestSystem(m models.SystemMetrics) {
+	select {
+	case h.ingestSystem <- m:
+	default:
+		slog.Warn("ws hub: ingestSystem channel full — dropping system metrics")
+	}
+}
+
+// IngestRDS delivers an RDSMetrics snapshot to the hub.
+// Non-blocking: drops if the buffer is full.
+func (h *Hub) IngestRDS(m models.RDSMetrics) {
+	select {
+	case h.ingestRDS <- m:
+	default:
+		slog.Warn("ws hub: ingestRDS channel full — dropping RDS metrics")
 	}
 }
 
@@ -247,6 +285,16 @@ func (h *Hub) Run(done <-chan struct{}) {
 			h.snapshot[p.EndpointID] = p
 			h.mu.Unlock()
 
+		case m := <-h.ingestSystem:
+			h.mu.Lock()
+			h.systemSnapshot = &m
+			h.mu.Unlock()
+
+		case m := <-h.ingestRDS:
+			h.mu.Lock()
+			h.rdsSnapshot = &m
+			h.mu.Unlock()
+
 		case <-ticker.C:
 			// Broadcast the current snapshot to all connected clients.
 			frame := h.buildFrame()
@@ -272,7 +320,7 @@ func (h *Hub) Run(done <-chan struct{}) {
 }
 
 // buildFrame serialises the current snapshot into a WSMessage JSON frame.
-// Returns nil if the snapshot is empty.
+// Returns nil if the network snapshot is empty.
 func (h *Hub) buildFrame() []byte {
 	h.mu.RLock()
 	if len(h.snapshot) == 0 {
@@ -283,12 +331,16 @@ func (h *Hub) buildFrame() []byte {
 	for _, p := range h.snapshot {
 		payloads = append(payloads, p)
 	}
+	sysSnap := h.systemSnapshot
+	rdsSnap := h.rdsSnapshot
 	h.mu.RUnlock()
 
 	msg := WSMessage{
 		Type:      "telemetry_snapshot",
 		Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
 		Payloads:  payloads,
+		System:    sysSnap,
+		RDS:       rdsSnap,
 	}
 	b, err := json.Marshal(msg)
 	if err != nil {

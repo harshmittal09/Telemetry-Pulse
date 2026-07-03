@@ -1,0 +1,112 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Description: >
+  TelemetryPulse Lambda Watchman — Cron-triggered uptime monitor.
+  Pings the TelemetryPulse /health endpoint every minute and emits
+  structured CloudWatch logs. Triggers a CloudWatch Alarm if the
+  function error rate exceeds 2 errors in 5 minutes.
+
+# ── Parameters ────────────────────────────────────────────────────────────────
+Parameters:
+  TargetURL:
+    Type: String
+    Description: "Full URL of the TelemetryPulse /health endpoint"
+    Default: "https://telemetrypulse.onrender.com/health"
+
+  ScheduleExpression:
+    Type: String
+    Description: "EventBridge cron/rate expression for the watchman trigger"
+    Default: "rate(1 minute)"
+
+  AlertEmail:
+    Type: String
+    Description: "Email address to notify on watchman failure (leave blank to disable)"
+    Default: ""
+
+# ── Globals ───────────────────────────────────────────────────────────────────
+Globals:
+  Function:
+    Runtime:      provided.al2023   # Go Lambda custom runtime (AL2023)
+    Architectures: [arm64]           # Graviton2 — ~20% cheaper, ~20% faster
+    Timeout:      10                 # 10s max (our HTTP timeout is 5s)
+    MemorySize:   128                # Minimal footprint for a pure HTTP check
+    Environment:
+      Variables:
+        TARGET_URL:        !Ref TargetURL
+        HTTP_TIMEOUT_SECS: "5"
+
+# ── Resources ─────────────────────────────────────────────────────────────────
+Resources:
+
+  # ── Lambda Function ────────────────────────────────────────────────────────
+  WatchmanFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: go1.x
+    Properties:
+      FunctionName: telemetrypulse-watchman
+      Description: "TelemetryPulse uptime watchdog — pings /health on schedule"
+      CodeUri: ./
+      Handler:  bootstrap          # The compiled Go binary must be named "bootstrap"
+      Policies:
+        - AWSLambdaBasicExecutionRole  # CloudWatch Logs write access
+      Events:
+        ScheduledPing:
+          Type: Schedule
+          Properties:
+            Schedule: !Ref ScheduleExpression
+            Name: telemetrypulse-watchman-schedule
+            Description: "Triggers the TelemetryPulse health watchman"
+            Enabled: true
+
+  # ── CloudWatch Alarm — Lambda errors ──────────────────────────────────────
+  WatchmanErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: telemetrypulse-watchman-errors
+      AlarmDescription: >
+        TelemetryPulse /health check failed. The watchman Lambda function
+        returned an error (non-200 response or timeout) 2+ times in 5 minutes.
+      Namespace:          AWS/Lambda
+      MetricName:         Errors
+      Dimensions:
+        - Name:  FunctionName
+          Value: !Ref WatchmanFunction
+      Statistic:          Sum
+      Period:             300      # 5-minute evaluation window
+      EvaluationPeriods:  1
+      Threshold:          2        # Alert if >= 2 errors in any 5-minute window
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData:   notBreaching
+      AlarmActions:
+        - !If
+          - HasAlertEmail
+          - !Ref WatchmanAlertTopic
+          - !Ref AWS::NoValue
+
+  # ── SNS Topic — email notification ────────────────────────────────────────
+  WatchmanAlertTopic:
+    Type: AWS::SNS::Topic
+    Condition: HasAlertEmail
+    Properties:
+      TopicName: telemetrypulse-watchman-alerts
+      Subscription:
+        - Protocol: email
+          Endpoint: !Ref AlertEmail
+
+# ── Conditions ────────────────────────────────────────────────────────────────
+Conditions:
+  HasAlertEmail: !Not [!Equals [!Ref AlertEmail, ""]]
+
+# ── Outputs ───────────────────────────────────────────────────────────────────
+Outputs:
+  WatchmanFunctionArn:
+    Description: "ARN of the TelemetryPulse Watchman Lambda function"
+    Value: !GetAtt WatchmanFunction.Arn
+    Export:
+      Name: TelemetryPulseWatchmanArn
+
+  WatchmanErrorAlarmArn:
+    Description: "ARN of the CloudWatch error alarm"
+    Value: !GetAtt WatchmanErrorAlarm.Arn

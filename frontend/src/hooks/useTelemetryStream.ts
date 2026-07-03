@@ -51,6 +51,8 @@ import type {
   EndpointStateMap,
   LogEntry,
   ConnectionStatus,
+  SystemMetrics,
+  RDSMetrics,
 } from '../types/telemetry';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -77,6 +79,10 @@ export interface TelemetryStreamState {
   status: ConnectionStatus;
   /** Total frames received since mount (useful for debug overlays). */
   frameCount: number;
+  /** Latest Go runtime / system memory metrics. Null until first frame arrives. */
+  systemMetrics: SystemMetrics | null;
+  /** Latest AWS RDS backup metrics. Null when RDS probe is not configured. */
+  rdsMetrics: RDSMetrics | null;
 }
 
 export interface TelemetryStreamControls {
@@ -97,10 +103,12 @@ export function useTelemetryStream(): TelemetryStreamState & TelemetryStreamCont
 
   // ── React state — these drive the DOM ─────────────────────────────────────
   const [state, setState] = useState<TelemetryStreamState>({
-    endpoints:  new Map<string, TelemetryPayload>(),
-    log:        [],
-    status:     'connecting',
-    frameCount: 0,
+    endpoints:     new Map<string, TelemetryPayload>(),
+    log:           [],
+    status:        'connecting',
+    frameCount:    0,
+    systemMetrics: null,
+    rdsMetrics:    null,
   });
 
   // ── Mutable refs — these live OUTSIDE React's rendering cycle ─────────────
@@ -157,15 +165,20 @@ export function useTelemetryStream(): TelemetryStreamState & TelemetryStreamCont
           // Clone the Map so React can detect the reference change.
           const nextEndpoints = new Map(prev.endpoints);
           const newLogEntries: LogEntry[] = [];
+          // Track the latest system/rds snapshots from this batch.
+          let nextSystem = prev.systemMetrics;
+          let nextRds    = prev.rdsMetrics;
 
           for (const msg of batch) {
             for (const payload of msg.payloads) {
               // Update latest snapshot for this endpoint.
               nextEndpoints.set(payload.endpoint_id, payload);
-
               // Create a log entry with a stable, monotonically increasing key.
               newLogEntries.push({ seq: seqRef.current++, payload });
             }
+            // Hoist system/rds from the latest frame that carries them.
+            if (msg.system) nextSystem = msg.system;
+            if (msg.rds)    nextRds    = msg.rds;
           }
 
           // Prepend new entries and cap total length.
@@ -173,9 +186,11 @@ export function useTelemetryStream(): TelemetryStreamState & TelemetryStreamCont
 
           return {
             ...prev,
-            endpoints:  nextEndpoints,
-            log:        nextLog,
-            frameCount: prev.frameCount + 1,
+            endpoints:     nextEndpoints,
+            log:           nextLog,
+            frameCount:    prev.frameCount + 1,
+            systemMetrics: nextSystem,
+            rdsMetrics:    nextRds,
           };
         });
       }
