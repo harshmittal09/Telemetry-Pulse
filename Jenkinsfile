@@ -30,7 +30,7 @@ pipeline {
     // Configure these names in Jenkins → Manage Jenkins → Global Tool Config
     tools {
         go    'go-1.24'
-        nodejs 'node-18'
+        nodejs 'node-20'
     }
 
     // ── Global environment ────────────────────────────────────────────────────
