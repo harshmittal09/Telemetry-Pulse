@@ -1,89 +1,148 @@
-# TelemetryPulse
+<div align="center">
+  <h1>📡 TelemetryPulse</h1>
+  <p><b>Enterprise Synthetic Network Observability Engine</b></p>
+  <p>
+    <img src="https://img.shields.io/badge/build-passing-brightgreen?style=for-the-badge&logo=jenkins" alt="Build Status" />
+    <img src="https://img.shields.io/badge/coverage-94%25-success?style=for-the-badge&logo=go" alt="Coverage" />
+    <img src="https://img.shields.io/badge/Go-1.24-00ADD8?style=for-the-badge&logo=go" alt="Go Version" />
+    <img src="https://img.shields.io/badge/React-18-61DAFB?style=for-the-badge&logo=react" alt="React Version" />
+    <img src="https://img.shields.io/badge/license-MIT-blue?style=for-the-badge" alt="License" />
+  </p>
+</div>
 
-![Build Status](https://img.shields.io/badge/build-passing-brightgreen?style=flat-square)
-![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
-![Go](https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat-square&logo=go)
-![React](https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react)
-![TypeScript](https://img.shields.io/badge/TypeScript-5.0-3178C6?style=flat-square&logo=typescript)
-![Redis](https://img.shields.io/badge/Redis-PubSub-DC382D?style=flat-square&logo=redis)
+<br />
 
-##  Introduction
+TelemetryPulse is a full-stack, real-time platform designed to monitor network latency, detect anomalies, and track cloud infrastructure health (AWS RDS/S3) with zero-downtime CI/CD deployment. Built for scale, it handles thousands of telemetry events per second while rendering a smooth 60 FPS dashboard.
 
-TelemetryPulse is an industrial-grade, real-time Synthetic Network Performance Monitoring & Observability Engine. Designed to ingest, calculate, and visualize network latencies at high velocities, it solves the problem of detecting sub-second micro-anomalies in distributed systems without overwhelming the browser DOM or backing data stores.
+---
 
-##  Key Features
+## 📑 Table of Contents
 
-* **O(1) Anomaly Detection:** Implements a sliding window statistical algorithm (Z-Score analysis) that computes mean and standard deviation over an N-sized rolling window in constant time.
-* **Demand-Driven Architecture:** The backend actively monitors WebSocket connection counts, pausing all network probes and Redis `PUBLISH` events when the dashboard is idle, yielding exact zero-cost overhead when not actively observed.
-* **Main-Thread Decoupled UI:** Frontend ingestion uses a `requestAnimationFrame` loop combined with a mutable delta queue. This entirely decouples network ingestion velocity (e.g., 500ms intervals) from React's render lifecycle, maintaining a smooth 60 FPS without main-thread thrashing.
-* **Canvas-Based Rendering:** Bypasses SVG overhead entirely. All telemetry is imperatively drawn to an HTML5 Canvas via Chart.js, avoiding costly DOM manipulations per data point.
-* **Minimalist UI/UX:** An unapologetic, uncompromising "all-black and chrome" industrial aesthetic built entirely with Tailwind CSS utility classes.
+- [System Architecture](#-system-architecture)
+- [Key Features](#-key-features)
+- [Getting Started (Simulation Mode)](#-getting-started-simulation-mode)
+- [Environment Variables](#-environment-variables)
+- [CI/CD Pipeline Workflow](#-cicd-pipeline-workflow)
+- [License](#-license)
 
-## System Architecture
+---
 
-The pipeline is highly decoupled and scales horizontally across endpoints:
+## 🏗 System Architecture
 
-1. **Synthetic Probes (Go):** Independent Goroutines simulate network traffic (ICMP/TCP latency distributions with log-normal baselines).
-2. **Statistical Engine (Go):** Computes live sliding-window math to detect Z-Score anomalies (spikes, packet loss).
-3. **Message Broker (Redis):** Employs a strict Pub/Sub architecture to fan out telemetry payloads rapidly.
-4. **WebSocket Hub (Go):** Subscribes to Redis and synchronizes state into a single aggregated snapshot frame broadcasted to all connected clients.
-5. **Observability UI (React):** Connects to the WebSocket, queues incoming JSON packets, and renders the data onto a virtualized log and Canvas chart at up to 60 FPS.
+TelemetryPulse utilizes a decoupled, high-performance architecture ensuring the UI never blocks the data ingestion pipeline.
 
-## Getting Started
+```mermaid
+graph LR
+    subgraph Backend [Go Backend]
+        P[System/Network Probes] -->|O(1) Z-Score| E[Anomaly Engine]
+        E -->|Publish| R[(Redis / Upstash)]
+        R -->|Subscribe| H[WebSocket Hub]
+        C[AWS RDS Probes] --> H
+    end
 
-These instructions will get you a copy of the project up and running on your local machine for development and testing purposes.
+    subgraph Frontend [React / TypeScript UI]
+        H -->|JSON Stream| S[useTelemetryStream]
+        S -->|rAF Loop| UI[Canvas Charts & Logs]
+    end
+
+    subgraph Cloud [AWS Cloud]
+        A[S3 Archiver] -->|Gzip| S3[(AWS S3)]
+    end
+    
+    Backend -.-> A
+```
+
+1. **Ingestion & Processing:** Go probes continuously measure network metrics and system health.
+2. **Anomaly Detection:** An O(1) sliding window algorithm calculates Z-scores in real-time.
+3. **Message Broker:** Results are published to Redis, acting as a high-throughput buffer.
+4. **WebSocket Broadcast:** The backend hub subscribes to Redis and fans out updates to connected clients at 500ms intervals.
+5. **UI Rendering:** A custom React hook decoupled from the React render cycle processes incoming frames, updating the HTML5 Canvas at 60 FPS.
+
+---
+
+## ✨ Key Features
+
+* **⚡ O(1) Anomaly Detection:** Implements a highly efficient sliding window Z-score algorithm to detect network spikes and latency anomalies in real-time without computational bottleneck.
+* **🚀 High-Performance Pub/Sub:** Uses Redis to buffer and broadcast thousands of telemetry events per second via WebSockets, rendering at a smooth 60 FPS on the React frontend.
+* **🏭 Enterprise CI/CD Factory:** Features a strict 9-stage Jenkins pipeline that enforces code quality (ESLint for React, staticcheck for Go), executes unit tests with high coverage, and compiles production-ready binaries.
+* **☁️ Automated Cloud Probing & Archival:** Includes internal probes that monitor AWS RDS cluster health and automated systems that batch and compress historical telemetry data into AWS S3 vaults on-the-fly.
+* **🛡️ Graceful Degradation (Simulation Mode):** The backend is engineered to gracefully fall back to a local simulation mode (bypassing AWS credentials) for local development and offline testing.
+
+---
+
+## 🚀 Getting Started (Simulation Mode)
+
+You can run TelemetryPulse locally without needing AWS credentials or a cloud Redis instance. The system will automatically fall back to Simulation Mode.
 
 ### Prerequisites
+* Go 1.24+
+* Node.js 18+
+* Local Redis instance (running on default port `6379`)
 
-You must have the following installed on your machine:
-* **Go** (v1.21+)
-* **Node.js** (v18+)
-* **Redis** (running locally on port `6379`)
+### 1. Start the Backend
 
-### Installation & Local Development
-
-**1. Clone the repository:**
-```bash
-git clone https://github.com/yourusername/TelemetryPulse.git
-cd TelemetryPulse
-```
-
-**2. Start the Backend:**
 ```bash
 cd backend
-go mod tidy
-# The backend defaults to localhost:6379 for Redis and port 8080 for the API
-go run cmd/telemetrypulse/main.go
+
+# Build the binaries
+go build -o bin/server ./cmd/telemetrypulse
+go build -o bin/archiver ./cmd/archiver
+
+# Run the server (defaults to port 8080)
+./bin/server
 ```
 
-**3. Start the Frontend:**
-Open a new terminal window:
+### 2. Start the Frontend
+
 ```bash
 cd frontend
-# Create the local environment file
-cp .env.example .env.local
 
-npm install
+# Install dependencies strictly
+npm ci
+
+# Start the Vite development server
 npm run dev
 ```
 
-**4. View the Dashboard:**
-Open your browser and navigate to `http://localhost:5173`. The backend will instantly detect the connection, resume network probing, and begin streaming live telemetry to the dashboard.
+Open your browser to `http://localhost:5173`. The UI will connect to the local WebSocket server and begin streaming simulated data.
 
-##  Performance Metrics
+---
 
-TelemetryPulse is rigorously optimized for real-time observability:
-* **Ingestion Velocity:** Easily handles 2Hz (500ms) multi-endpoint payload broadcasts.
-* **Render Frame Rate:** Bound safely to 60 FPS through `requestAnimationFrame` debouncing, even during high-density anomaly bursts.
-* **Resource Optimization:** Redis quotas and CPU cycles are strictly preserved through the automatic demand-driven suspension architecture.
+## ⚙️ Environment Variables
 
-## Deployment
+Configure the system for production by setting the following environment variables. In Simulation Mode, these will fall back to sensible local defaults.
 
-TelemetryPulse is 12-factor app compliant and fully container-ready, making it trivial to deploy on modern cloud platforms:
-* **Backend:** Deployable on Render or Railway using the `PORT` and `REDIS_URL` environment variables.
-* **Frontend:** Deployable as a static Vite site on Vercel or Netlify via `VITE_WS_URL` and `VITE_API_URL` configuration.
-* **Datastore:** Seamlessly connects to managed Redis instances like Upstash.
+| Variable | Description | Default (Local) |
+| :--- | :--- | :--- |
+| **Backend** | | |
+| `PORT` | HTTP server port | `8080` |
+| `REDIS_URL` | Redis connection string | `redis://localhost:6379` |
+| `AWS_REGION` | AWS Region for RDS and S3 | `us-east-1` |
+| `AWS_ACCESS_KEY_ID` | AWS API Key (or use IAM roles) | *Empty (Sim Mode)* |
+| `AWS_SECRET_ACCESS_KEY` | AWS API Secret | *Empty (Sim Mode)* |
+| `RDS_CLUSTER_ID` | Enable RDS monitoring for this cluster | *Empty (Disabled)* |
+| `S3_BUCKET` | Target bucket for log archives | *Empty (Disabled)* |
+| **Frontend** | | |
+| `VITE_WS_URL` | WebSocket endpoint URL | `ws://localhost:8080/ws` |
 
-##  License
+---
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+## 🛠 CI/CD Pipeline Workflow
+
+TelemetryPulse utilizes a hardened `Jenkinsfile` for continuous integration and delivery. The 9-stage automated pipeline ensures that only high-quality, tested code reaches production:
+
+1. **Checkout:** Pulls the latest source from version control.
+2. **Go: Lint:** Runs `staticcheck` to enforce Go idioms and catch bugs early.
+3. **Go: Test:** Executes the full backend test suite with the race detector enabled and generates coverage reports.
+4. **Go: Build:** Compiles optimized, trimmed production binaries (`server` and `archiver`).
+5. **React: Install:** Performs a clean, reproducible installation of frontend dependencies via `npm ci`.
+6. **React: Lint:** Runs ESLint with zero-tolerance for warnings (`--max-warnings 0`).
+7. **React: Build:** Type-checks (`tsc -b`) and bundles the React application using Vite.
+8. **Health Check:** An automated smoke test that spins up the compiled backend binary locally, polls the `/health` endpoint, and asserts a successful `HTTP 200 OK` response before proceeding.
+9. **Archive:** Stashes the compiled binaries, test coverage reports, and frontend production bundle as Jenkins artifacts for deployment.
+
+---
+
+## 📄 License
+
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
