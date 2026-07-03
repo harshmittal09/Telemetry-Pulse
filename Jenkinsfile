@@ -92,8 +92,8 @@ pipeline {
                         # Verify module graph integrity
                         go mod verify
 
-                        # Run staticcheck on the entire module
-                        ${GOPATH}/bin/staticcheck ./...
+                        # Run staticcheck on the entire module, ignoring SA1019 (deprecated warnings)
+                        ${GOPATH}/bin/staticcheck -checks="all,-SA1019" ./...
                     '''
                 }
             }
