@@ -1,3 +1,5 @@
+// Package models contains the shared data structures for telemetry and AWS probes.
+
 package models
 
 import "time"
