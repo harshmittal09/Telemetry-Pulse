@@ -34,7 +34,7 @@ TelemetryPulse utilizes a decoupled, high-performance architecture ensuring the 
 ```mermaid
 graph LR
     subgraph Backend [Go Backend]
-        P[System/Network Probes] -->|O(1) Z-Score| E[Anomaly Engine]
+        P[System/Network Probes] -->|"O(1)" Z-Score| E[Anomaly Engine]
         E -->|Publish| R[(Redis / Upstash)]
         R -->|Subscribe| H[WebSocket Hub]
         C[AWS RDS Probes] --> H
