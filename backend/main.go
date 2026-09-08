@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"telemetrypulse/internal/anomaly"
 	"telemetrypulse/internal/probe"
+	"telemetrypulse/internal/pubsub"
 )
 
 func main() {
@@ -12,6 +13,8 @@ func main() {
 	channel := make(chan probe.ProbeResult)
 
 	detector := anomaly.NewDetector()
+
+	redisClient := pubsub.NewRedisClient()
 
 	for _, url := range urls {
 		probe.StartWorker(url, channel)
@@ -28,6 +31,13 @@ func main() {
 		}
 
 		zScore, isAnomaly := detector.Analyze(url, latency)
+
+		if isAnomaly {
+			err := redisClient.PublishAnomaly(url, zScore, timestrap)
+			if err != nil {
+				fmt.Printf("Failed to publish to Redis: %v\n", err)
+			}
+		}
 
 		fmt.Printf("[URL: %s] Latency: %.2fms | Z-Score: %.2f | Anomaly: %v\n | TimeStamp : %v\n", url, latency, zScore, isAnomaly, timestrap)
 

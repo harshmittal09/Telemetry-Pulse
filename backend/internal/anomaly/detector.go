@@ -30,6 +30,6 @@ func (d *Detector) Analyze(url string, latency float64) (float64, bool) {
 		return zScore, true
 	}
 
-	return latency, false
+	return zScore, false
 
 }
