@@ -1,10 +1,13 @@
 package main
 
 import (
-	"fmt"
+	"log"
+	"net/http"
 	"telemetrypulse/internal/anomaly"
+	"telemetrypulse/internal/engine"
 	"telemetrypulse/internal/probe"
 	"telemetrypulse/internal/pubsub"
+	"telemetrypulse/internal/wsserver"
 )
 
 func main() {
@@ -13,34 +16,24 @@ func main() {
 	channel := make(chan probe.ProbeResult)
 
 	detector := anomaly.NewDetector()
-
 	redisClient := pubsub.NewRedisClient()
+	wsApp := wsserver.NewWSServer()
+
+	pipeline := engine.NewPipeline(detector, redisClient)
+	http.HandleFunc("/ws", wsApp.HandleComm)
+
+	go func() {
+		err := http.ListenAndServe(":8080", nil)
+
+		if err != nil {
+			log.Fatalf("Websocket Server crashed: %v", err)
+		}
+	}()
 
 	for _, url := range urls {
 		probe.StartWorker(url, channel)
 	}
 
-	for result := range channel {
-		url := result.Url
-		latency := result.Latency
-		statusCode := result.StatusCode
-		timestrap := result.Timestrap
-
-		if statusCode == 404 {
-			continue
-		}
-
-		zScore, isAnomaly := detector.Analyze(url, latency)
-
-		if isAnomaly {
-			err := redisClient.PublishAnomaly(url, zScore, timestrap)
-			if err != nil {
-				fmt.Printf("Failed to publish to Redis: %v\n", err)
-			}
-		}
-
-		fmt.Printf("[URL: %s] Latency: %.2fms | Z-Score: %.2f | Anomaly: %v\n | TimeStamp : %v\n", url, latency, zScore, isAnomaly, timestrap)
-
-	}
+	pipeline.Start(channel)
 
 }
