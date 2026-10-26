@@ -19,11 +19,17 @@
 
     <div class="status-bar">
       <p id="summary">Loading the last 15 minutes...</p>
-      <p class="muted num" id="connection">Connecting</p>
+      <div class="clock num">
+        <span id="last-reading">Connecting</span>
+        <span class="next" id="next">
+          <span class="progress" aria-hidden="true"><span id="progress"></span></span>
+          <span id="next-check"></span>
+        </span>
+      </div>
     </div>
 
     <div class="table-wrap">
-      <table>
+      <table id="table">
         <thead>
           <tr>
             <th>Site</th>
@@ -36,10 +42,13 @@
         </thead>
         <tbody id="rows"></tbody>
       </table>
-      <div class="legend">
-        <span><i class="key-ok"></i>Normal reading</span>
-        <span><i class="key-spike"></i>Spike</span>
-        <span><i class="key-down"></i>No response</span>
+      <div class="table-foot">
+        <p class="muted num" id="hover-info">Point at a bar to see that reading.</p>
+        <div class="legend">
+          <span><i class="key-ok"></i>Normal reading</span>
+          <span><i class="key-spike"></i>Spike</span>
+          <span><i class="key-down"></i>No response</span>
+        </div>
       </div>
     </div>
 
@@ -50,7 +59,7 @@
       </section>
       <section>
         <h2>How it works</h2>
-        <p class="how">A Go worker requests each site every <span id="interval">10 seconds</span> and times how long the first response takes. Each site keeps its own baseline from its last 100 good readings. A reading counts as a spike when it is more than 3 standard deviations above that baseline and at least 20 ms slower. Readings reach this page through Redis and a WebSocket.</p>
+        <p class="how" id="how">A Go worker requests each site every few seconds and times how long the first response takes. Each site keeps its own baseline from its last 100 good readings, and a reading that is far above that baseline is flagged as a spike. Readings reach this page through Redis and a WebSocket.</p>
       </section>
     </div>
 

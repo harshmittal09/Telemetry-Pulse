@@ -1,26 +1,35 @@
-// Loads the last 15 minutes from /api/history, then keeps the page live with
-// readings pushed over /ws. Everything is redrawn on each reading, there are
-// only a handful of rows so that's cheap.
+// Loads the last 15 minutes from /api/history, then stays live with readings
+// pushed over /ws. The table is redrawn on every reading (only a few rows, so
+// that's cheap) and the clock bits in the status bar update twice a second.
 
 const MAX_READINGS = 90; // the server keeps the same amount
 const BAR_WIDTH = 3;
 const BAR_GAP = 1;
 const CHART_HEIGHT = 32;
+const FRESH_MS = 1200; // how long a value that just changed stays highlighted
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
 const sites = new Map(); // url -> readings, oldest first
-let intervalMs = 10000;
-let lastReadingAt = null;
+const freshUntil = new Map(); // url -> when its highlight ends
+let settings = { interval_ms: 10000, spike_sigma: 2.5, spike_min_ms: 10 };
+let lastReading = null; // newest reading from any site
+let clockSkew = 0; // browser clock minus server clock, measured from live readings
+let hover = null; // { url, ts } of the bar under the pointer
 let connection = 'connecting';
 let retryDelay = 1000;
 
 const el = {
   intro: document.getElementById('intro'),
   summary: document.getElementById('summary'),
-  connection: document.getElementById('connection'),
+  lastReading: document.getElementById('last-reading'),
+  next: document.getElementById('next'),
+  nextCheck: document.getElementById('next-check'),
+  progress: document.getElementById('progress'),
+  table: document.getElementById('table'),
   rows: document.getElementById('rows'),
+  hoverInfo: document.getElementById('hover-info'),
   events: document.getElementById('events'),
-  interval: document.getElementById('interval'),
+  how: document.getElementById('how'),
 };
 
 // --- data ---
@@ -32,14 +41,19 @@ async function loadHistory() {
   }
   const data = await res.json();
 
-  intervalMs = data.interval_ms || intervalMs;
+  settings = {
+    interval_ms: data.interval_ms || settings.interval_ms,
+    spike_sigma: data.spike_sigma || settings.spike_sigma,
+    spike_min_ms: data.spike_min_ms ?? settings.spike_min_ms,
+  };
+
   sites.clear();
   for (const target of data.targets || []) {
     const readings = (target.readings || []).slice(-MAX_READINGS);
     sites.set(target.url, readings);
     const last = readings[readings.length - 1];
-    if (last && (!lastReadingAt || last.timestamp > lastReadingAt)) {
-      lastReadingAt = last.timestamp;
+    if (last && (!lastReading || last.timestamp > lastReading.timestamp)) {
+      lastReading = last;
     }
   }
 }
@@ -60,7 +74,20 @@ function addReading(reading) {
   if (list.length > MAX_READINGS) {
     list.shift();
   }
-  lastReadingAt = reading.timestamp;
+
+  if (!lastReading || reading.timestamp >= lastReading.timestamp) {
+    lastReading = reading;
+  }
+  // the reading was taken at timestamp and finished latency_ms later, which is
+  // roughly when it reached us, so this tells us how far off our clock is
+  clockSkew = Date.now() - (reading.timestamp + reading.latency_ms);
+
+  freshUntil.set(reading.url, Date.now() + FRESH_MS);
+  setTimeout(renderRows, FRESH_MS + 50);
+}
+
+function serverNow() {
+  return Date.now() - clockSkew;
 }
 
 // --- websocket ---
@@ -98,7 +125,7 @@ function connect() {
 
 function setConnection(state) {
   connection = state;
-  renderConnection();
+  renderClock();
 }
 
 async function refresh() {
@@ -131,6 +158,10 @@ function clock(ts) {
   });
 }
 
+function plural(n, word) {
+  return n + ' ' + word + (n === 1 ? '' : 's');
+}
+
 function duration(ms) {
   const s = Math.max(1, Math.round(ms / 1000));
   if (s < 60) {
@@ -141,8 +172,20 @@ function duration(ms) {
   return rest ? min + ' min ' + rest + ' s' : min + ' min';
 }
 
-function plural(n, word) {
-  return n + ' ' + word + (n === 1 ? '' : 's');
+function ago(ms) {
+  const s = Math.floor(ms / 1000);
+  if (s < 10) {
+    return 'just now';
+  }
+  if (s < 60) {
+    return s + ' s ago';
+  }
+  return Math.floor(s / 60) + ' min ago';
+}
+
+function every() {
+  const s = Math.round(settings.interval_ms / 1000);
+  return s === 1 ? 'every second' : 'every ' + s + ' seconds';
 }
 
 // --- rendering ---
@@ -152,17 +195,18 @@ function render() {
   renderSummary();
   renderRows();
   renderEvents();
-  renderConnection();
+  renderClock();
 }
 
 function renderIntro() {
-  const seconds = Math.round(intervalMs / 1000);
-  const every = seconds === 1 ? 'every second' : 'every ' + seconds + ' seconds';
-  el.interval.textContent = seconds === 1 ? 'second' : seconds + ' seconds';
   if (sites.size > 0) {
-    el.intro.textContent = 'Checks ' + plural(sites.size, 'website') + ' ' + every +
+    el.intro.textContent = 'Checks ' + plural(sites.size, 'website') + ' ' + every() +
       ' and flags any response that is unusually slow for that site.';
   }
+  el.how.textContent = 'A Go worker requests each site ' + every() + ' and times how long the first ' +
+    'response takes. Each site keeps its own baseline from its last 100 good readings. A reading counts ' +
+    'as a spike when it is more than ' + settings.spike_sigma + ' standard deviations above that baseline ' +
+    'and at least ' + settings.spike_min_ms + ' ms slower. Readings reach this page through Redis and a WebSocket.';
 }
 
 function renderSummary() {
@@ -198,36 +242,48 @@ function renderSummary() {
   el.summary.textContent = text;
 }
 
-function renderConnection() {
+function renderClock() {
+  el.next.hidden = true;
+
   if (connection === 'retrying') {
-    el.connection.textContent = 'Connection lost, trying again';
+    el.lastReading.textContent = 'Connection lost, trying again';
     return;
   }
   if (connection === 'connecting') {
-    el.connection.textContent = 'Connecting';
+    el.lastReading.textContent = 'Connecting';
     return;
   }
-  if (!lastReadingAt) {
-    el.connection.textContent = 'Connected, waiting for readings';
+  if (!lastReading) {
+    el.lastReading.textContent = 'Connected, waiting for the first reading';
     return;
   }
-  const stale = Date.now() - lastReadingAt > intervalMs * 3;
-  el.connection.textContent = stale
-    ? 'Connected, but no new readings since ' + clock(lastReadingAt)
-    : 'Connected, last reading at ' + clock(lastReadingAt);
+
+  const since = serverNow() - lastReading.timestamp;
+  if (since > settings.interval_ms * 3) {
+    el.lastReading.textContent = 'No new readings since ' + clock(lastReading.timestamp);
+    return;
+  }
+
+  const secs = Math.floor(since / 1000);
+  el.lastReading.textContent = secs < 1 ? 'Last reading just now' : 'Last reading ' + secs + ' s ago';
+
+  const left = lastReading.timestamp + settings.interval_ms - serverNow();
+  const done = Math.min(1, Math.max(0, 1 - left / settings.interval_ms));
+  el.next.hidden = false;
+  el.progress.style.width = Math.round(done * 100) + '%';
+  el.nextCheck.textContent = left > 0 ? 'Next check in ' + Math.ceil(left / 1000) + ' s' : 'Checking now';
 }
 
 function renderRows() {
   const rows = document.createDocumentFragment();
+  const now = Date.now();
 
   for (const [url, list] of sites) {
-    const last = list[list.length - 1];
     const tr = document.createElement('tr');
-
     tr.append(
       textCell(siteName(url), 'site'),
-      statusCell(last),
-      nowCell(last),
+      statusCell(list[list.length - 1]),
+      nowCell(url, list, now),
       textCell(normal(list), 'num muted'),
       chartCell(url, list),
       textCell(uptime(list), 'num'),
@@ -236,6 +292,7 @@ function renderRows() {
   }
 
   el.rows.replaceChildren(rows);
+  renderHoverInfo();
 }
 
 function textCell(text, className) {
@@ -267,14 +324,36 @@ function statusCell(last) {
   return td;
 }
 
-function nowCell(last) {
+function nowCell(url, list, now) {
+  const last = list[list.length - 1];
   if (!last) {
     return textCell('-', 'muted');
   }
+
+  const box = document.createElement('span');
+  box.className = (freshUntil.get(url) || 0) > now ? 'now fresh' : 'now';
+  const value = document.createElement('span');
+  const change = document.createElement('span');
+  change.className = 'change';
+
   if (!last.ok) {
-    return textCell(last.error || 'No response', 'error');
+    value.className = 'error';
+    value.textContent = last.error || 'No response';
+  } else {
+    value.textContent = Math.round(last.latency_ms) + ' ms';
+    const prev = list[list.length - 2];
+    if (prev && !prev.ok) {
+      change.textContent = 'back up';
+    } else if (prev) {
+      const diff = Math.round(last.latency_ms) - Math.round(prev.latency_ms);
+      change.textContent = (diff < 0 ? '\u2212' : '+') + Math.abs(diff) + ' ms';
+    }
   }
-  return textCell(Math.round(last.latency_ms) + ' ms', 'num');
+
+  box.append(value, change);
+  const td = document.createElement('td');
+  td.append(box);
+  return td;
 }
 
 function normal(list) {
@@ -290,8 +369,7 @@ function uptime(list) {
   if (list.length === 0) {
     return '-';
   }
-  const ok = list.filter((r) => r.ok).length;
-  const pct = (ok / list.length) * 100;
+  const pct = (list.filter((r) => r.ok).length / list.length) * 100;
   return (Number.isInteger(pct) ? pct : pct.toFixed(1)) + '%';
 }
 
@@ -303,6 +381,7 @@ function chartCell(url, list) {
   svg.setAttribute('height', CHART_HEIGHT);
   svg.setAttribute('viewBox', '0 0 ' + width + ' ' + CHART_HEIGHT);
   svg.setAttribute('role', 'img');
+  svg.setAttribute('data-url', url);
 
   const latencies = list.filter((r) => r.ok).map((r) => r.latency_ms);
   const min = Math.min(...latencies);
@@ -310,42 +389,85 @@ function chartCell(url, list) {
 
   // newest reading on the right, so a short history fills in from the right
   const offset = MAX_READINGS - list.length;
-  const paths = { ok: '', spike: '', down: '' };
   let spikes = 0;
   let failures = 0;
 
   list.forEach((r, i) => {
-    const x = (offset + i) * (BAR_WIDTH + BAR_GAP);
-    if (!r.ok) {
-      paths.down += 'M' + x + ' 0h' + BAR_WIDTH + 'v' + CHART_HEIGHT + 'h-' + BAR_WIDTH + 'Z';
-      failures++;
-      return;
+    let h = CHART_HEIGHT;
+    let kind = 'down';
+    if (r.ok) {
+      h = 3 + Math.round(((r.latency_ms - min) / range) * (CHART_HEIGHT - 5));
+      kind = r.anomaly ? 'spike' : 'ok';
     }
-    const h = 3 + Math.round(((r.latency_ms - min) / range) * (CHART_HEIGHT - 5));
-    const bar = 'M' + x + ' ' + (CHART_HEIGHT - h) + 'h' + BAR_WIDTH + 'v' + h + 'h-' + BAR_WIDTH + 'Z';
-    if (r.anomaly) {
-      paths.spike += bar;
-      spikes++;
-    } else {
-      paths.ok += bar;
+    if (kind === 'spike') spikes++;
+    if (kind === 'down') failures++;
+    if (hover && hover.url === url && hover.ts === r.timestamp) {
+      kind += ' hover';
     }
+
+    const bar = document.createElementNS(SVG_NS, 'rect');
+    bar.setAttribute('x', (offset + i) * (BAR_WIDTH + BAR_GAP));
+    bar.setAttribute('y', CHART_HEIGHT - h);
+    bar.setAttribute('width', BAR_WIDTH);
+    bar.setAttribute('height', h);
+    bar.setAttribute('class', kind);
+    svg.append(bar);
   });
 
   svg.setAttribute('aria-label', 'Last 15 minutes for ' + siteName(url) + ': ' +
     plural(list.length, 'reading') + ', ' + plural(spikes, 'spike') + ', ' + plural(failures, 'failed check'));
 
-  for (const kind of ['down', 'ok', 'spike']) {
-    if (paths[kind]) {
-      const path = document.createElementNS(SVG_NS, 'path');
-      path.setAttribute('class', kind);
-      path.setAttribute('d', paths[kind]);
-      svg.append(path);
-    }
-  }
-
   const td = document.createElement('td');
   td.append(svg);
   return td;
+}
+
+// works out which reading is under the pointer from its x position, so short
+// bars are as easy to point at as tall ones
+function onPointerMove(event) {
+  const svg = event.target.closest && event.target.closest('svg.bars');
+  if (!svg) {
+    return;
+  }
+  const url = svg.getAttribute('data-url');
+  const list = sites.get(url) || [];
+  const box = svg.getBoundingClientRect();
+  if (box.width === 0) {
+    return;
+  }
+  const slot = Math.floor(((event.clientX - box.left) / box.width) * MAX_READINGS);
+  const reading = list[slot - (MAX_READINGS - list.length)];
+  const next = reading ? { url, ts: reading.timestamp } : null;
+
+  if (next?.url !== hover?.url || next?.ts !== hover?.ts) {
+    hover = next;
+    renderRows();
+  }
+}
+
+function renderHoverInfo() {
+  const list = hover ? sites.get(hover.url) || [] : [];
+  const r = list.find((x) => x.timestamp === hover?.ts);
+  if (!r) {
+    el.hoverInfo.className = 'muted num';
+    el.hoverInfo.textContent = 'Point at a bar to see that reading.';
+    return;
+  }
+
+  const at = siteName(hover.url) + ' at ' + clock(r.timestamp) + ': ';
+  el.hoverInfo.className = 'num';
+  if (!r.ok) {
+    el.hoverInfo.textContent = at + 'no response (' + (r.error || 'unknown') + ')';
+    return;
+  }
+  let text = at + Math.round(r.latency_ms) + ' ms';
+  if (r.baseline_ms > 0) {
+    text += ', normal is about ' + Math.round(r.baseline_ms) + ' ms';
+  }
+  if (r.anomaly) {
+    text += ', flagged as a spike';
+  }
+  el.hoverInfo.textContent = text;
 }
 
 function renderEvents() {
@@ -388,14 +510,18 @@ function renderEvents() {
   events.sort((a, b) => b.at - a.at);
 
   const items = document.createDocumentFragment();
-  for (const e of events.slice(0, 10)) {
+  const now = serverNow();
+  for (const e of events.slice(0, 8)) {
     const li = document.createElement('li');
     const time = document.createElement('time');
     time.dateTime = new Date(e.at).toISOString();
     time.textContent = clock(e.at);
     const text = document.createElement('span');
     text.textContent = e.text;
-    li.append(time, text);
+    const when = document.createElement('span');
+    when.className = 'ago';
+    when.textContent = ago(now - e.at);
+    li.append(time, text, when);
     items.append(li);
   }
 
@@ -409,8 +535,19 @@ function renderEvents() {
   el.events.replaceChildren(items);
 }
 
-// keeps "last reading at" honest if the server goes quiet
-setInterval(renderConnection, 5000);
+el.rows.addEventListener('mousemove', onPointerMove);
+el.table.addEventListener('mouseleave', () => {
+  if (hover) {
+    hover = null;
+    renderRows();
+  }
+});
+
+// countdown and "x s ago" texts
+setInterval(() => {
+  renderClock();
+  renderEvents();
+}, 500);
 
 connect();
 refresh();

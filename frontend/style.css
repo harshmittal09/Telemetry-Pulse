@@ -56,6 +56,10 @@ h2 {
   font-variant-numeric: tabular-nums;
 }
 
+.error {
+  color: #a8261d;
+}
+
 .top {
   display: flex;
   flex-wrap: wrap;
@@ -72,14 +76,50 @@ h2 {
   padding-top: 2px;
 }
 
+/* status bar with the countdown */
+
 .status-bar {
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
+  align-items: center;
   gap: 8px 24px;
   padding: 12px 16px;
   background: #f6f7f9;
   border-radius: 6px;
+}
+
+.clock {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 20px;
+  color: #5b6470;
+}
+
+.next {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.next[hidden] {
+  display: none;
+}
+
+.progress {
+  width: 96px;
+  height: 6px;
+  border-radius: 3px;
+  background: #e3e6ea;
+  overflow: hidden;
+}
+
+.progress span {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: #5b6470;
 }
 
 /* table */
@@ -92,7 +132,7 @@ h2 {
 
 table {
   width: 100%;
-  min-width: 900px;
+  min-width: 940px;
   border-collapse: collapse;
 }
 
@@ -114,10 +154,6 @@ td {
 
 td.site {
   font-weight: 500;
-}
-
-td.error {
-  color: #a8261d;
 }
 
 .pill {
@@ -147,6 +183,26 @@ td.error {
   color: #5b6470;
 }
 
+/* current value, highlighted for a moment when it changes */
+.now {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 2px 6px;
+  margin-left: -6px;
+  border-radius: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.now.fresh {
+  background: #fff4cc;
+}
+
+.change {
+  color: #5b6470;
+  font-size: 12px;
+}
+
 .bars {
   display: block;
 }
@@ -169,13 +225,24 @@ td.error {
   background: #f2c2bd;
 }
 
+.bars .hover {
+  fill: #1e2226;
+}
+
+.table-foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px 24px;
+  padding: 10px 16px;
+  font-size: 13px;
+}
+
 .legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 20px;
-  padding: 10px 16px;
+  gap: 8px 16px;
   color: #5b6470;
-  font-size: 13px;
 }
 
 .legend span {
@@ -224,6 +291,14 @@ td.error {
 .events time {
   flex: 0 0 64px;
   color: #5b6470;
+  font-variant-numeric: tabular-nums;
+}
+
+.events .ago {
+  margin-left: auto;
+  color: #5b6470;
+  font-size: 13px;
+  white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
 
