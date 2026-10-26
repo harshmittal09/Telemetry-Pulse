@@ -12,7 +12,7 @@ func warmUp(d *Detector, url string, n int, r *rand.Rand) {
 }
 
 func TestNoAlertsDuringWarmUp(t *testing.T) {
-	d := NewDetector()
+	d := NewDetector(DefaultConfig())
 	for i, v := range []float64{40, 40.2, 95, 40.1, 120} {
 		if d.Analyze("u", v).Anomaly {
 			t.Fatalf("reading %d (%vms) flagged before a baseline exists", i, v)
@@ -21,7 +21,7 @@ func TestNoAlertsDuringWarmUp(t *testing.T) {
 }
 
 func TestSpikeIsFlagged(t *testing.T) {
-	d := NewDetector()
+	d := NewDetector(DefaultConfig())
 	warmUp(d, "u", 100, rand.New(rand.NewSource(1)))
 
 	res := d.Analyze("u", 300)
@@ -34,7 +34,7 @@ func TestSpikeIsFlagged(t *testing.T) {
 }
 
 func TestSmallJumpIsIgnored(t *testing.T) {
-	d := NewDetector()
+	d := NewDetector(DefaultConfig())
 	r := rand.New(rand.NewSource(2))
 	for i := 0; i < 100; i++ {
 		d.Analyze("u", 40+r.NormFloat64()*0.5) // very steady site
@@ -46,7 +46,7 @@ func TestSmallJumpIsIgnored(t *testing.T) {
 }
 
 func TestOneTimeoutDoesNotHideTheNextSpike(t *testing.T) {
-	d := NewDetector()
+	d := NewDetector(DefaultConfig())
 	warmUp(d, "u", 100, rand.New(rand.NewSource(3)))
 
 	if !d.Analyze("u", 5000).Anomaly {
@@ -58,7 +58,7 @@ func TestOneTimeoutDoesNotHideTheNextSpike(t *testing.T) {
 }
 
 func TestSustainedSlowdownKeepsAlertingForAWhile(t *testing.T) {
-	d := NewDetector()
+	d := NewDetector(DefaultConfig())
 	r := rand.New(rand.NewSource(4))
 	warmUp(d, "u", 100, r)
 
@@ -74,7 +74,7 @@ func TestSustainedSlowdownKeepsAlertingForAWhile(t *testing.T) {
 }
 
 func TestTargetsHaveSeparateBaselines(t *testing.T) {
-	d := NewDetector()
+	d := NewDetector(DefaultConfig())
 	r := rand.New(rand.NewSource(5))
 	warmUp(d, "fast", 100, r)
 	for i := 0; i < 100; i++ {
@@ -82,5 +82,23 @@ func TestTargetsHaveSeparateBaselines(t *testing.T) {
 	}
 	if d.Analyze("slow", 410).Anomaly {
 		t.Fatal("normal reading for the slow site flagged using the fast site's baseline")
+	}
+}
+
+func TestStricterConfigFlagsLess(t *testing.T) {
+	strict := NewDetector(Config{ZThreshold: 3, MinJumpMs: 20, MinSamples: 20})
+	loose := NewDetector(DefaultConfig())
+	r := rand.New(rand.NewSource(6))
+	for i := 0; i < 100; i++ {
+		v := 40 + r.NormFloat64()*3
+		strict.Analyze("u", v)
+		loose.Analyze("u", v)
+	}
+	// ~16ms over normal: a spike for the default settings, not for the strict ones
+	if !loose.Analyze("u", 56).Anomaly {
+		t.Fatal("default config missed a 16ms jump")
+	}
+	if strict.Analyze("u", 56).Anomaly {
+		t.Fatal("strict config flagged a 16ms jump")
 	}
 }

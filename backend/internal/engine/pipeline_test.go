@@ -8,7 +8,7 @@ import (
 )
 
 func TestDownReadingsStayOutOfTheBaseline(t *testing.T) {
-	p := NewPipeline(anomaly.NewDetector(), nil, nil)
+	p := NewPipeline(anomaly.NewDetector(anomaly.DefaultConfig()), nil, nil)
 
 	for i := 0; i < 50; i++ {
 		p.process(probe.ProbeResult{URL: "u", Latency: 40, OK: true, StatusCode: 200})

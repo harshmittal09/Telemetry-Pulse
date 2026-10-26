@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"telemetrypulse/internal/anomaly"
 )
 
 // History keeps the last few readings per target in memory so a freshly
@@ -13,14 +15,16 @@ type History struct {
 	mu       sync.RWMutex
 	limit    int
 	interval time.Duration
+	detector anomaly.Config
 	targets  []string
 	readings map[string][]Reading
 }
 
-func NewHistory(targets []string, limit int, interval time.Duration) *History {
+func NewHistory(targets []string, limit int, interval time.Duration, detector anomaly.Config) *History {
 	return &History{
 		limit:    limit,
 		interval: interval,
+		detector: detector,
 		targets:  targets,
 		readings: make(map[string][]Reading),
 	}
@@ -44,15 +48,23 @@ type targetHistory struct {
 }
 
 type historyResponse struct {
-	IntervalMs int64           `json:"interval_ms"`
-	Targets    []targetHistory `json:"targets"`
+	IntervalMs     int64           `json:"interval_ms"`
+	SpikeSigma     float64         `json:"spike_sigma"`
+	SpikeMinMs     float64         `json:"spike_min_ms"`
+	WarmupReadings int             `json:"warmup_readings"`
+	Targets        []targetHistory `json:"targets"`
 }
 
 func (h *History) snapshot() historyResponse {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
-	resp := historyResponse{IntervalMs: h.interval.Milliseconds()}
+	resp := historyResponse{
+		IntervalMs:     h.interval.Milliseconds(),
+		SpikeSigma:     h.detector.ZThreshold,
+		SpikeMinMs:     h.detector.MinJumpMs,
+		WarmupReadings: h.detector.MinSamples,
+	}
 	for _, url := range h.targets {
 		readings := append([]Reading{}, h.readings[url]...)
 		resp.Targets = append(resp.Targets, targetHistory{URL: url, Readings: readings})

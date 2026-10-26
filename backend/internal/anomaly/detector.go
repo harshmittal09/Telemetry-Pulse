@@ -4,25 +4,40 @@ import (
 	"telemetrypulse/internal/window"
 )
 
-const (
-	windowSize = 100
-	minSamples = 20   // don't call anything an anomaly until we have a real baseline
-	zThreshold = 3.0  // how many stddevs above normal counts as a spike
-	minJumpMs  = 20.0 // a "3 sigma" jump that is only a few ms isn't worth an alert
-)
+const windowSize = 100
+
+// Config decides how sensitive the detector is. A reading is a spike when it is
+// more than ZThreshold stddevs above the baseline AND at least MinJumpMs slower,
+// once the site has MinSamples readings.
+type Config struct {
+	ZThreshold float64
+	MinJumpMs  float64
+	MinSamples int
+}
+
+func DefaultConfig() Config {
+	return Config{
+		ZThreshold: 2.5,
+		MinJumpMs:  10,
+		MinSamples: 10,
+	}
+}
 
 type Result struct {
 	ZScore   float64
 	Baseline float64 // average latency of the window before this reading
+	Stddev   float64 // spread of the window before this reading
 	Anomaly  bool
 }
 
 type Detector struct {
+	cfg     Config
 	windows map[string]*window.Window
 }
 
-func NewDetector() *Detector {
+func NewDetector(cfg Config) *Detector {
 	return &Detector{
+		cfg:     cfg,
 		windows: make(map[string]*window.Window),
 	}
 }
@@ -43,13 +58,14 @@ func (d *Detector) Analyze(url string, latency float64) Result {
 	res := Result{
 		ZScore:   w.ZScore(latency),
 		Baseline: mean,
+		Stddev:   stddev,
 	}
-	res.Anomaly = w.Count() >= minSamples && res.ZScore > zThreshold && latency-mean > minJumpMs
+	res.Anomaly = w.Count() >= d.cfg.MinSamples && res.ZScore > d.cfg.ZThreshold && latency-mean > d.cfg.MinJumpMs
 
 	if res.Anomaly {
 		// add a capped value instead of the raw spike, otherwise one 5s timeout
 		// blows up the stddev and hides every problem after it
-		w.Add(mean + zThreshold*stddev)
+		w.Add(mean + d.cfg.ZThreshold*stddev)
 	} else {
 		w.Add(latency)
 	}

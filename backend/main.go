@@ -35,8 +35,12 @@ func main() {
 		log.Fatalf("Redis is not reachable: %v", err)
 	}
 
-	detector := anomaly.NewDetector()
-	history := engine.NewHistory(cfg.Targets, 90, cfg.ProbeInterval)
+	detectorCfg := anomaly.DefaultConfig()
+	detectorCfg.ZThreshold = cfg.SpikeSigma
+	detectorCfg.MinJumpMs = cfg.SpikeMinMs
+
+	detector := anomaly.NewDetector(detectorCfg)
+	history := engine.NewHistory(cfg.Targets, 90, cfg.ProbeInterval, detectorCfg)
 	pipeline := engine.NewPipeline(detector, redisClient, history)
 	wsApp := wsserver.NewWSServer(ctx, redisClient, cfg.AllowedOrigins)
 
@@ -60,7 +64,8 @@ func main() {
 	}
 
 	go func() {
-		log.Printf("Listening on :%s, probing %d targets every %s", cfg.Port, len(cfg.Targets), cfg.ProbeInterval)
+		log.Printf("Listening on :%s, probing %d target(s) every %s, spikes at %.1f sigma and %.0fms",
+			cfg.Port, len(cfg.Targets), cfg.ProbeInterval, cfg.SpikeSigma, cfg.SpikeMinMs)
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalf("HTTP server crashed: %v", err)
 		}

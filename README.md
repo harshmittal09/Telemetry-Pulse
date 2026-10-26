@@ -19,7 +19,7 @@ flowchart LR
 
 - **Probing.** Each site gets its own goroutine. A probe times how long the response headers take to arrive, so DNS, connect, TLS and redirects are included. The body is never downloaded, which keeps bandwidth tiny.
 - **Baseline.** Each site keeps a window of its last 100 good readings. The mean and standard deviation come from running sums, so adding a reading is O(1) no matter how big the window is.
-- **Spikes.** A reading is a spike when its z-score is above 3 *and* it is at least 20 ms slower than normal. Nothing is flagged until a site has 20 readings. A spike goes into the window capped at mean + 3σ, so one 5 second timeout doesn't hide the next problem.
+- **Spikes.** A reading is a spike when its z-score is above 2.5 *and* it is at least 10 ms slower than normal. Nothing is flagged until a site has 10 readings. A spike goes into the window capped at mean + 2.5σ, so one 5 second timeout doesn't hide the next problem. Both thresholds are settings (`SPIKE_SIGMA`, `SPIKE_MIN_MS`); I picked the defaults by replaying a few hundred real readings and keeping the ones that flag real slowdowns without flagging ordinary jitter.
 - **Down.** Failed requests and 4xx/5xx responses are reported as down with a reason (timeout, connection refused, HTTP 404...) and kept out of the baseline. Otherwise a dead site would look like the fastest one, since errors come back in about a millisecond.
 - **Live updates.** Every reading is published on Redis and pushed to browsers over a WebSocket. The last 15 minutes are also kept in memory and served on `/api/history`, so the page has charts as soon as it opens.
 
@@ -46,12 +46,14 @@ All optional, set as environment variables.
 | `PORT` | `8080` | HTTP port |
 | `REDIS_URL` | `redis://localhost:6379/0` | Use `rediss://` for TLS |
 | `STATIC_DIR` | `../frontend` | Folder the dashboard is served from |
+| `SPIKE_SIGMA` | `2.5` | How many standard deviations above normal counts as a spike. Higher means fewer spikes |
+| `SPIKE_MIN_MS` | `10` | A spike also has to be at least this many ms slower than normal |
 | `ALLOWED_ORIGINS` | none | Extra origins allowed to open `/ws`, for a frontend running on another port |
 
 ## Endpoints
 
 - `GET /` the dashboard
-- `GET /api/history` last 90 readings per site
+- `GET /api/history` last 90 readings per site, plus the probe interval and spike settings
 - `GET /ws` WebSocket, one JSON message per reading
 - `GET /health` returns `ok`
 

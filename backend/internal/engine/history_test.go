@@ -6,10 +6,12 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"telemetrypulse/internal/anomaly"
 )
 
 func TestHistoryKeepsOnlyTheLatest(t *testing.T) {
-	h := NewHistory([]string{"a"}, 3, time.Second)
+	h := NewHistory([]string{"a"}, 3, time.Second, anomaly.DefaultConfig())
 	for i := int64(1); i <= 5; i++ {
 		h.Add(Reading{URL: "a", Timestamp: i})
 	}
@@ -21,7 +23,7 @@ func TestHistoryKeepsOnlyTheLatest(t *testing.T) {
 }
 
 func TestHistoryEndpoint(t *testing.T) {
-	h := NewHistory([]string{"a", "b"}, 10, 10*time.Second)
+	h := NewHistory([]string{"a", "b"}, 10, 10*time.Second, anomaly.DefaultConfig())
 	h.Add(Reading{URL: "b", LatencyMs: 42, OK: true, Status: 200})
 
 	rec := httptest.NewRecorder()
@@ -31,7 +33,7 @@ func TestHistoryEndpoint(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if body.IntervalMs != 10000 || len(body.Targets) != 2 {
+	if body.IntervalMs != 10000 || len(body.Targets) != 2 || body.SpikeSigma != 2.5 || body.SpikeMinMs != 10 || body.WarmupReadings != 10 {
 		t.Fatalf("got %+v", body)
 	}
 	// targets keep their configured order, even ones with no readings yet
