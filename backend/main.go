@@ -47,6 +47,12 @@ func main() {
 		w.Write([]byte("ok"))
 	})
 
+	if _, err := os.Stat(cfg.StaticDir); err != nil {
+		log.Printf("No dashboard found at %s, serving only the API", cfg.StaticDir)
+	} else {
+		mux.Handle("/", http.FileServer(http.Dir(cfg.StaticDir)))
+	}
+
 	server := &http.Server{
 		Addr:              ":" + cfg.Port,
 		Handler:           mux,

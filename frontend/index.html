@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Telemetry Pulse</title>
+  <meta name="description" content="Live response times for a few websites, with slow responses flagged as they happen.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="page">
+    <header class="top">
+      <div>
+        <h1>Telemetry Pulse</h1>
+        <p class="muted" id="intro">Checks a few websites every few seconds and flags any response that is unusually slow for that site.</p>
+      </div>
+      <a href="https://github.com/harshmittal09/Telemetry-Pulse">Source on GitHub</a>
+    </header>
+
+    <div class="status-bar">
+      <p id="summary">Loading the last 15 minutes...</p>
+      <p class="muted num" id="connection">Connecting</p>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Site</th>
+            <th>Status</th>
+            <th>Now</th>
+            <th>Normal</th>
+            <th>Last 15 minutes</th>
+            <th>Up</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <div class="legend">
+        <span><i class="key-ok"></i>Normal reading</span>
+        <span><i class="key-spike"></i>Spike</span>
+        <span><i class="key-down"></i>No response</span>
+      </div>
+    </div>
+
+    <div class="columns">
+      <section class="events-section">
+        <h2>What happened</h2>
+        <ul class="events" id="events"></ul>
+      </section>
+      <section>
+        <h2>How it works</h2>
+        <p class="how">A Go worker requests each site every <span id="interval">10 seconds</span> and times how long the first response takes. Each site keeps its own baseline from its last 100 good readings. A reading counts as a spike when it is more than 3 standard deviations above that baseline and at least 20 ms slower. Readings reach this page through Redis and a WebSocket.</p>
+      </section>
+    </div>
+
+    <footer>
+      Made by <a href="https://github.com/harshmittal09">harshmittal09</a>. History lives in memory, so it starts fresh whenever the server restarts.
+    </footer>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

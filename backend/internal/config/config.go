@@ -14,6 +14,7 @@ type Config struct {
 	Targets        []string
 	ProbeInterval  time.Duration
 	AllowedOrigins []string // extra origins allowed to open /ws, same origin is always allowed
+	StaticDir      string   // folder with the dashboard page
 }
 
 var defaultTargets = []string{"https://google.com", "https://github.com", "https://silvershinehouse.com"}
@@ -25,12 +26,14 @@ var defaultTargets = []string{"https://google.com", "https://github.com", "https
 //	TARGETS         comma separated urls
 //	PROBE_INTERVAL  10s (minimum 1s)
 //	ALLOWED_ORIGINS comma separated, e.g. http://localhost:5173
+//	STATIC_DIR      ../frontend (relative to where you run the binary)
 func Load() Config {
 	cfg := Config{
 		Port:          getEnv("PORT", "8080"),
 		RedisURL:      getEnv("REDIS_URL", "redis://localhost:6379/0"),
 		Targets:       defaultTargets,
 		ProbeInterval: 10 * time.Second,
+		StaticDir:     getEnv("STATIC_DIR", "../frontend"),
 	}
 
 	if raw := os.Getenv("TARGETS"); raw != "" {

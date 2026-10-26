@@ -10,8 +10,10 @@ func TestDefaults(t *testing.T) {
 	t.Setenv("TARGETS", "")
 	t.Setenv("PROBE_INTERVAL", "")
 
+	t.Setenv("STATIC_DIR", "")
+
 	cfg := Load()
-	if cfg.Port != "8080" || cfg.ProbeInterval != 10*time.Second || len(cfg.Targets) != 3 {
+	if cfg.Port != "8080" || cfg.ProbeInterval != 10*time.Second || len(cfg.Targets) != 3 || cfg.StaticDir != "../frontend" {
 		t.Fatalf("got %+v", cfg)
 	}
 }
