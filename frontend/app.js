@@ -373,6 +373,15 @@ function uptime(list) {
   return (Number.isInteger(pct) ? pct : pct.toFixed(1)) + '%';
 }
 
+function median(values) {
+  if (values.length === 0) {
+    return 0;
+  }
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
 function chartCell(url, list) {
   const width = MAX_READINGS * (BAR_WIDTH + BAR_GAP);
   const svg = document.createElementNS(SVG_NS, 'svg');
@@ -385,7 +394,10 @@ function chartCell(url, list) {
 
   const latencies = list.filter((r) => r.ok).map((r) => r.latency_ms);
   const min = Math.min(...latencies);
-  const range = Math.max(1, Math.max(...latencies) - min);
+  // one very slow reading (a timeout, or the first request after a restart)
+  // would flatten every other bar, so anything over 3x the median is full height
+  const top = Math.min(Math.max(...latencies), median(latencies) * 3);
+  const range = Math.max(1, top - min);
 
   // newest reading on the right, so a short history fills in from the right
   const offset = MAX_READINGS - list.length;
@@ -396,7 +408,7 @@ function chartCell(url, list) {
     let h = CHART_HEIGHT;
     let kind = 'down';
     if (r.ok) {
-      h = 3 + Math.round(((r.latency_ms - min) / range) * (CHART_HEIGHT - 5));
+      h = 3 + Math.round(Math.min(1, (r.latency_ms - min) / range) * (CHART_HEIGHT - 5));
       kind = r.anomaly ? 'spike' : 'ok';
     }
     if (kind === 'spike') spikes++;
