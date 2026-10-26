@@ -2,6 +2,10 @@
 
 Telemetry Pulse checks a few websites every 10 seconds, learns what a normal response time looks like for each one, and flags readings that are unusually slow. Every reading streams live to a small dashboard.
 
+**Live:** https://telemetry-pulse.onrender.com
+
+![Telemetry Pulse dashboard showing three sites, their current and normal response times, the last 15 minutes as bars with a spike marked, and a list of recent events](docs/screenshot.png)
+
 Backend in Go, Redis pub/sub in the middle, plain HTML/CSS/JS on the front.
 
 ## How it works
@@ -20,6 +24,7 @@ flowchart LR
 - **Probing.** Each site gets its own goroutine. A probe times how long the response headers take to arrive, so DNS, connect, TLS and redirects are included. The body is never downloaded, which keeps bandwidth tiny.
 - **Baseline.** Each site keeps a window of its last 100 good readings. The mean and standard deviation come from running sums, so adding a reading is O(1) no matter how big the window is.
 - **Spikes.** A reading is a spike when its z-score is above 2.5 *and* it is at least 10 ms slower than normal. Nothing is flagged until a site has 10 readings. A spike goes into the window capped at mean + 2.5σ, so one 5 second timeout doesn't hide the next problem. Both thresholds are settings (`SPIKE_SIGMA`, `SPIKE_MIN_MS`); I picked the defaults by replaying a few hundred real readings and keeping the ones that flag real slowdowns without flagging ordinary jitter.
+- **Cold start.** The first request to each site is left out of the baseline. It also pays for a cold DNS lookup and TLS setup: on the live server github.com took 300 ms the first time and about 4 ms after that, and that one reading was enough to hide every github.com spike for the next 15 minutes.
 - **Down.** Failed requests and 4xx/5xx responses are reported as down with a reason (timeout, connection refused, HTTP 404...) and kept out of the baseline. Otherwise a dead site would look like the fastest one, since errors come back in about a millisecond.
 - **Live updates.** Every reading is published on Redis and pushed to browsers over a WebSocket. The last 15 minutes are also kept in memory and served on `/api/history`, so the page has charts as soon as it opens.
 
@@ -82,5 +87,6 @@ backend/
   internal/wsserver        WebSocket endpoint
   internal/config          environment variables
 frontend/                  dashboard (index.html, style.css, app.js)
+docs/                      screenshot for this readme
 Dockerfile, start.sh       container build
 ```
