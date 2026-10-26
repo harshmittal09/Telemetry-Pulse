@@ -102,3 +102,24 @@ func TestStricterConfigFlagsLess(t *testing.T) {
 		t.Fatal("strict config flagged a 16ms jump")
 	}
 }
+
+func TestFirstReadingIsLeftOut(t *testing.T) {
+	d := NewDetector(DefaultConfig())
+	if res := d.Analyze("u", 300); res.Anomaly || res.Baseline != 0 {
+		t.Fatalf("first reading = %+v, want it ignored", res)
+	}
+
+	r := rand.New(rand.NewSource(7))
+	for i := 0; i < 30; i++ {
+		d.Analyze("u", 4+r.NormFloat64()*0.3)
+	}
+
+	// baseline is ~4ms, not dragged up by the cold 300ms request
+	res := d.Analyze("u", 20)
+	if res.Baseline > 5 {
+		t.Fatalf("baseline = %v, the cold first reading leaked in", res.Baseline)
+	}
+	if !res.Anomaly {
+		t.Fatalf("20ms on a 4ms site not flagged, z=%v", res.ZScore)
+	}
+}

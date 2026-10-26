@@ -48,8 +48,11 @@ func (d *Detector) Analyze(url string, latency float64) Result {
 	w := d.windows[url]
 
 	if w == nil {
-		w = window.MakeWindow(windowSize)
-		d.windows[url] = w
+		// the first request to a site also pays for a cold DNS lookup and TLS
+		// setup, on the live server it was 10-75x slower than everything after
+		// it (github.com: 300ms, then ~4ms), so it never goes into the baseline
+		d.windows[url] = window.MakeWindow(windowSize)
+		return Result{}
 	}
 
 	mean := w.Mean()
