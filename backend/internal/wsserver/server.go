@@ -7,6 +7,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/redis/go-redis/v9"
+	"telemetrypulse/internal/pubsub"
 )
 
 var upgrader = websocket.Upgrader{
@@ -40,7 +41,7 @@ func (ws *Wsserver) HandleComm(w http.ResponseWriter, r *http.Request) {
 	defer conn.Close()
 
 	ctx := context.Background()
-	pubsub := ws.redisClient.Subscribe(ctx, "telemetry:alerts")
+	pubsub := ws.redisClient.Subscribe(ctx, pubsub.Channel)
 	defer pubsub.Close()
 
 	ch := pubsub.Channel()

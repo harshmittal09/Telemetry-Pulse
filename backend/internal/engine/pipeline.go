@@ -1,7 +1,8 @@
 package engine
 
 import (
-	"fmt"
+	"context"
+	"log"
 	"telemetrypulse/internal/anomaly"
 	"telemetrypulse/internal/probe"
 	"telemetrypulse/internal/pubsub"
@@ -10,37 +11,60 @@ import (
 type Pipeline struct {
 	detector    *anomaly.Detector
 	redisClient *pubsub.RedisClient
+	history     *History
 }
 
-func NewPipeline(detector *anomaly.Detector, redisClient *pubsub.RedisClient) *Pipeline {
+func NewPipeline(detector *anomaly.Detector, redisClient *pubsub.RedisClient, history *History) *Pipeline {
 	return &Pipeline{
 		detector:    detector,
 		redisClient: redisClient,
+		history:     history,
 	}
 }
 
-func (p *Pipeline) Start(channel <-chan probe.ProbeResult) {
-	for result := range channel {
-		url := result.Url
-		latency := result.Latency
-		statusCode := result.StatusCode
-		timestrap := result.Timestrap
+// Start blocks until ctx is cancelled, every probe result becomes a Reading
+// that is stored in history and published for the websocket clients.
+func (p *Pipeline) Start(ctx context.Context, channel <-chan probe.ProbeResult) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case result := <-channel:
+			reading := p.process(result)
+			p.history.Add(reading)
 
-		if statusCode == 404 {
-			continue
-		}
+			if err := p.redisClient.Publish(ctx, reading); err != nil {
+				log.Printf("Failed to publish to Redis: %v", err)
+			}
 
-		res := p.detector.Analyze(url, latency)
-		zScore, isAnomaly := res.ZScore, res.Anomaly
-
-		if isAnomaly {
-			err := p.redisClient.PublishAnomaly(url, zScore, timestrap)
-			if err != nil {
-				fmt.Printf("Failed to publish to Redis: %v\n", err)
+			if reading.OK {
+				log.Printf("[%s] %d %.2fms | baseline %.2fms | z %.2f | anomaly %v",
+					reading.URL, reading.Status, reading.LatencyMs, reading.BaselineMs, reading.ZScore, reading.Anomaly)
+			} else {
+				log.Printf("[%s] DOWN (%s) after %.2fms", reading.URL, reading.Error, reading.LatencyMs)
 			}
 		}
-
-		fmt.Printf("[URL: %s] Latency: %.2fms | Z-Score: %.2f | Anomaly: %v\n | TimeStamp : %v\n", url, latency, zScore, isAnomaly, timestrap)
-
 	}
+}
+
+func (p *Pipeline) process(result probe.ProbeResult) Reading {
+	reading := Reading{
+		URL:       result.URL,
+		LatencyMs: round2(result.Latency),
+		Status:    result.StatusCode,
+		OK:        result.OK,
+		Error:     result.Error,
+		Timestamp: result.Timestamp,
+	}
+
+	// failed requests come back almost instantly, so they stay out of the
+	// baseline, otherwise a dead site would look like the fastest one
+	if result.OK {
+		res := p.detector.Analyze(result.URL, result.Latency)
+		reading.ZScore = round2(res.ZScore)
+		reading.BaselineMs = round2(res.Baseline)
+		reading.Anomaly = res.Anomaly
+	}
+
+	return reading
 }
