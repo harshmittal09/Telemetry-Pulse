@@ -20,25 +20,23 @@ func MakeWindow(capacity int) *Window {
 }
 
 func (w *Window) Add(val float64) {
-	if w.data[w.head] != 0 {
-		w.sum -= w.data[w.head]
-		w.sumSquares -= w.data[w.head] * w.data[w.head]
-
+	// once the window is full, the slot at head holds the oldest value, so take it out first
+	if w.count == w.capacity {
+		old := w.data[w.head]
+		w.sum -= old
+		w.sumSquares -= old * old
+	} else {
+		w.count++
 	}
 
 	w.data[w.head] = val
 	w.sum += val
 	w.sumSquares += val * val
-	w.head++
+	w.head = (w.head + 1) % w.capacity
+}
 
-	if w.head == w.capacity {
-		w.head = 0
-	}
-
-	if w.count < w.capacity {
-		w.count++
-	}
-
+func (w *Window) Count() int {
+	return w.count
 }
 
 func (w *Window) Mean() float64 {

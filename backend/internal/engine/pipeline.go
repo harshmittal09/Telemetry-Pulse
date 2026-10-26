@@ -30,7 +30,8 @@ func (p *Pipeline) Start(channel <-chan probe.ProbeResult) {
 			continue
 		}
 
-		zScore, isAnomaly := p.detector.Analyze(url, latency)
+		res := p.detector.Analyze(url, latency)
+		zScore, isAnomaly := res.ZScore, res.Anomaly
 
 		if isAnomaly {
 			err := p.redisClient.PublishAnomaly(url, zScore, timestrap)
